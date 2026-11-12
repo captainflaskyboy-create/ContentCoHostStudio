@@ -135,7 +135,7 @@ def main():
     source_archive(args.source_kit, publish, sources)
     stage = output / f"{stem}-win-x64"
     require(not stage.exists(), "Staging folder already exists; use a fresh output directory")
-    shutil.copytree(publish, stage)
+    shutil.copytree(publish, stage, ignore=shutil.ignore_patterns("*.pdb"))
     for path in (ROOT / "licenses").iterdir():
         if path.is_file():
             shutil.copy2(path, stage / "licenses" / path.name)
