@@ -59,6 +59,10 @@ public sealed class SpoutFrameRenderer : IAvatarFrameRenderer
     public nint Render(AvatarOutputSnapshot snapshot)
     {
         ObjectDisposedException.ThrowIf(straightPixels == 0, this);
+        if (!snapshot.Visible)
+        {
+            Array.Clear(pixels); Marshal.Copy(pixels, 0, straightPixels, pixels.Length); return straightPixels;
+        }
         if (!images.TryGetValue(snapshot.Sprite, out var bitmap))
         {
             bitmap = SKBitmap.Decode(sprites[snapshot.Sprite]) ?? throw new InvalidDataException("Unreadable avatar frame.");

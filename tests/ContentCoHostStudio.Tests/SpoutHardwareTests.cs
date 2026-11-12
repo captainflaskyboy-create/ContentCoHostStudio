@@ -25,9 +25,9 @@ public sealed class SpoutHardwareTests
             using var receiver = new Receiver(output.SenderName, senderPath);
             using var renderer = new SpoutFrameRenderer(sprites);
             long sequence = 0;
-            foreach (var (flip, rotation) in new[] { (false, 0d), (true, 0d), (true, 45d), (false, -90d) })
+            foreach (var (flip, rotation, visible) in new[] { (false, 0d, true), (true, 0d, true), (true, 45d, true), (false, -90d, true), (false, 0d, false), (false, 0d, true) })
             {
-                var snapshot = new AvatarOutputSnapshot("Sprites.normal_idle001.png", 4, -3, flip, rotation, ++sequence);
+                var snapshot = new AvatarOutputSnapshot("Sprites.normal_idle001.png", 4, -3, flip, rotation, ++sequence, Visible: visible);
                 var expected = new byte[512 * 512 * 4]; Marshal.Copy(renderer.Render(snapshot), expected, 0, expected.Length);
                 output.Publish(snapshot);
                 var deadline = DateTime.UtcNow.AddSeconds(5); var matched = false;

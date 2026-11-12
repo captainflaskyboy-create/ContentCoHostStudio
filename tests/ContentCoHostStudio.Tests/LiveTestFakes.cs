@@ -42,7 +42,7 @@ internal sealed class FakeLiveTransport : ILiveTransport
         return new(frame.Bytes.Length, frame.Type, frame.End);
     }
     public Task CloseAsync(CancellationToken token) => Closing?.Invoke(token) ?? Task.CompletedTask;
-    public void Abort() => Aborted = true;
+    public void Abort() { Aborted = true; Disconnect(); }
     public ValueTask DisposeAsync() { Disposed = true; return ValueTask.CompletedTask; }
 }
 
@@ -50,10 +50,18 @@ internal sealed class SilentLivePlayback : ILiveAudioPlayback
 {
     private int buffered;
     public int BufferedBytes => Volatile.Read(ref buffered);
+    public bool IsSpeaking { get; private set; }
+    public event Action<LivePlaybackTurn>? TurnChanged;
+    public event Action? Failed;
+    public void Fail() => Failed?.Invoke();
+    private long turn;
+    public void StartPlayback() { IsSpeaking = true; TurnChanged?.Invoke(new(++turn, true)); }
+    public void CompleteTurn() { }
     public ConcurrentQueue<byte[]> Received { get; } = new();
     public int Interrupts;
     public bool Disposed { get; private set; }
     public bool DrainImmediately { get; set; }
+    public bool FailOnDispose { get; set; }
     public void Append(byte[] pcm)
     {
         if (BufferedBytes + pcm.Length > LiveAudioPlayback.MaximumBufferedBytes)
@@ -61,9 +69,9 @@ internal sealed class SilentLivePlayback : ILiveAudioPlayback
         Received.Enqueue(pcm);
         if (!DrainImmediately) Interlocked.Add(ref buffered, pcm.Length);
     }
-    public void Drain() => Interlocked.Exchange(ref buffered, 0);
+    public void Drain() { Interlocked.Exchange(ref buffered, 0); IsSpeaking = false; TurnChanged?.Invoke(new(turn, false)); }
     public void Interrupt() { Interlocked.Increment(ref Interrupts); Drain(); }
-    public void Dispose() { Disposed = true; Drain(); }
+    public void Dispose() { Disposed = true; Drain(); if (FailOnDispose) throw new IOException("private-device-error"); }
 }
 
 internal sealed class FakeLiveMicrophone : IMicrophoneSource

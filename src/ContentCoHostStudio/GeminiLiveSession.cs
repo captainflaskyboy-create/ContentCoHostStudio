@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -7,8 +6,22 @@ namespace ContentCoHostStudio;
 
 public sealed class LiveSessionException(string message) : Exception(message);
 public enum LiveSessionState { Connecting, Listening, Responding, Closed, TimedOut, Failed }
+public enum LiveReplyLength { OneWord, OneSentence, Custom }
 public sealed record LiveSessionOptions(bool UseMicrophone, string Personality, string Voice, string VoiceStyle, string Behavior,
-    string Model = GeminiLiveSession.Model);
+    string Model = GeminiLiveSession.Model, int DurationSeconds = 30, LiveReplyLength ReplyLength = LiveReplyLength.OneSentence, int MaximumWords = 20)
+{
+    public string BrevityInstruction => "Reply length (takes precedence over any conflicting personality or behavior length instructions): " + (ReplyLength switch
+    {
+        LiveReplyLength.OneWord => "Use exactly one spoken word per reply. No introductions or explanations.",
+        LiveReplyLength.OneSentence => "Use exactly one short sentence per reply. No introductions or follow-up sentences.",
+        _ => $"Use no more than {MaximumWords} spoken words per reply."
+    });
+    public void Validate()
+    {
+        if (DurationSeconds is < 1 or > 600 || MaximumWords is < 1 or > 100 || !Enum.IsDefined(ReplyLength))
+            throw new InvalidOperationException("Live duration must be 1–600 seconds and custom reply length 1–100 words.");
+    }
+}
 
 public sealed class LiveResponseTranscript
 {
@@ -26,15 +39,16 @@ public sealed class LiveResponseTranscript
 }
 
 public sealed class GeminiLiveSession(ILiveTransport transport, ILiveAudioPlayback playback, IMicrophoneSource microphone,
-    TimeSpan? sessionLimit = null) : IAsyncDisposable
+    TimeSpan? sessionLimit = null, TimeProvider? clock = null) : IAsyncDisposable
 {
     public const string Model = "gemini-3.8-live";
-    public static readonly TimeSpan MaximumDuration = TimeSpan.FromSeconds(30);
+    public static readonly TimeSpan MaximumDuration = TimeSpan.FromMinutes(10);
     public const string DefaultBehavior = "Stay quiet during normal narration, breaths, and brief pauses. " +
         "Respond only when directly addressed or when a clear stumble offers an appropriate brief joke. " +
         "Prefer one short sentence, then return to listening. Yield immediately when the creator resumes speaking. " +
         "Do not greet the creator or comment just because the session starts.";
-    private readonly TimeSpan duration = sessionLimit ?? MaximumDuration;
+    private readonly TimeProvider clock = clock ?? TimeProvider.System;
+    private TimeSpan duration;
     private readonly SemaphoreSlim sendGate = new(1, 1);
     private readonly CancellationTokenSource stopSource = new();
     private readonly LiveResponseTranscript transcript = new();
@@ -47,22 +61,24 @@ public sealed class GeminiLiveSession(ILiveTransport transport, ILiveAudioPlayba
     private volatile bool turnPending;
     private volatile bool initialTurnSent;
     private long startedAt;
-    private long endedAt;
+    private long endedAt = -1;
     private long connectedTicks = -1;
     private long firstAudioTicks = -1;
-    private long textSentAt;
+    private long textSentAt = -1;
     private int started;
     private int disposed;
 
     public event Action? Changed;
     public event Action<string>? ResponseChanged;
     public event Action<string>? Error;
-    public bool IsActive => Volatile.Read(ref started) != 0 && Interlocked.Read(ref endedAt) == 0;
+    public event Action<LivePlaybackTurn>? PlaybackChanged;
+    public bool IsActive => Volatile.Read(ref started) != 0 && Interlocked.Read(ref endedAt) < 0 && !stopSource.IsCancellationRequested && !sessionToken.IsCancellationRequested && Elapsed < duration;
     public bool IsMicrophone => options?.UseMicrophone == true;
     public string SessionModel => options?.Model ?? Model;
-    public bool CanSendText => ready && initialTurnSent && IsActive && !IsMicrophone && !turnPending && playback.BufferedBytes == 0;
-    public LiveSessionState State => state == LiveSessionState.Listening && playback.BufferedBytes > 0 ? LiveSessionState.Responding : state;
-    public TimeSpan Elapsed => startedAt == 0 ? TimeSpan.Zero : Stopwatch.GetElapsedTime(startedAt, endedAt == 0 ? Stopwatch.GetTimestamp() : endedAt);
+    public bool CanSendText => ready && initialTurnSent && IsActive && !IsMicrophone && !turnPending && playback.BufferedBytes == 0 && !playback.IsSpeaking;
+    public LiveSessionState State => state == LiveSessionState.Listening && (playback.BufferedBytes > 0 || playback.IsSpeaking) ? LiveSessionState.Responding : state;
+    public TimeSpan Duration => duration;
+    public TimeSpan Elapsed => Volatile.Read(ref started) == 0 ? TimeSpan.Zero : clock.GetElapsedTime(startedAt, endedAt < 0 ? clock.GetTimestamp() : endedAt);
     public TimeSpan? ConnectionTime => Interlocked.Read(ref connectedTicks) is var ticks && ticks >= 0 ? TimeSpan.FromTicks(ticks) : null;
     public TimeSpan? FirstAudioTime => Interlocked.Read(ref firstAudioTicks) is var ticks && ticks >= 0 ? TimeSpan.FromTicks(ticks) : null;
     public string ResponseText { get { lock (outputGate) return transcript.Text; } }
@@ -87,7 +103,8 @@ public sealed class GeminiLiveSession(ILiveTransport transport, ILiveAudioPlayba
                     ["parts"] = new JsonArray(new JsonObject
                     {
                         ["text"] = options.Personality + "\nVoice delivery: " + options.VoiceStyle + "\nLive behavior: " + options.Behavior +
-                        (options.UseMicrophone ? "" : "\nEvery saved-transcript text turn is an explicit request for one brief spoken co-host reply.")
+                        (options.UseMicrophone ? "" : "\nEvery saved-transcript text turn is an explicit request for one brief spoken co-host reply.") +
+                        "\n" + options.BrevityInstruction
                     })
                 },
                 ["outputAudioTranscription"] = new JsonObject(),
@@ -106,12 +123,16 @@ public sealed class GeminiLiveSession(ILiveTransport transport, ILiveAudioPlayba
 
     public Task RunAsync(string apiKey, LiveSessionOptions settings, string initialTranscript, CancellationToken cancellationToken)
     {
+        settings.Validate();
+        duration = sessionLimit ?? TimeSpan.FromSeconds(settings.DurationSeconds);
         if (duration <= TimeSpan.Zero || duration > MaximumDuration)
-            throw new InvalidOperationException("Live sessions must be limited to at most thirty seconds.");
+            throw new InvalidOperationException("Live sessions must be limited to at most ten minutes.");
         if (Interlocked.Exchange(ref started, 1) != 0)
             throw new InvalidOperationException("Create a fresh Live session for each Start.");
         options = settings;
-        startedAt = Stopwatch.GetTimestamp();
+        startedAt = clock.GetTimestamp();
+        playback.TurnChanged += ForwardPlayback;
+        playback.Failed += PlaybackFailed;
         state = LiveSessionState.Connecting;
         runTask = Task.Run(() => RunCoreAsync(apiKey, initialTranscript, cancellationToken));
         return runTask;
@@ -119,9 +140,9 @@ public sealed class GeminiLiveSession(ILiveTransport transport, ILiveAudioPlayba
 
     private async Task RunCoreAsync(string apiKey, string initialTranscript, CancellationToken cancellationToken)
     {
-        using var deadline = new CancellationTokenSource();
-        TimeSpan remaining = duration - Stopwatch.GetElapsedTime(startedAt);
-        deadline.CancelAfter(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero);
+        TimeSpan remaining = duration - clock.GetElapsedTime(startedAt);
+        using var deadline = new CancellationTokenSource(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero, clock);
+        if (remaining <= TimeSpan.Zero) deadline.Cancel();
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, stopSource.Token, deadline.Token);
         sessionToken = linked.Token;
         using var abortAtDeadline = deadline.Token.Register(() =>
@@ -139,12 +160,13 @@ public sealed class GeminiLiveSession(ILiveTransport transport, ILiveAudioPlayba
                 throw new LiveSessionException("Choose a supported voice before starting Live.");
             if (GeminiModelCatalog.GetLiveProtocol(options.Model) == LiveProtocol.Unsupported)
                 throw new LiveSessionException("Choose a supported Gemini Live model before starting. No fallback model was used.");
+            sessionToken.ThrowIfCancellationRequested();
             await transport.ConnectAsync(apiKey.Trim(), sessionToken).ConfigureAwait(false);
             await SendJsonAsync(BuildSetup(options), sessionToken).ConfigureAwait(false);
             // Nothing is uploaded before the server acknowledges setup.
             while (!ready)
                 ProcessMessage(await ReceiveMessageAsync(sessionToken).ConfigureAwait(false));
-            Interlocked.Exchange(ref connectedTicks, Stopwatch.GetElapsedTime(startedAt).Ticks);
+            Interlocked.Exchange(ref connectedTicks, clock.GetElapsedTime(startedAt).Ticks);
             if (options.UseMicrophone)
                 audioTask = StreamMicrophoneAsync(sessionToken);
             else
@@ -200,7 +222,7 @@ public sealed class GeminiLiveSession(ILiveTransport transport, ILiveAudioPlayba
                 transcript.FinishTurn(state == LiveSessionState.TimedOut ? "timed out / incomplete" : "incomplete");
                 ResponseChanged?.Invoke(transcript.Text);
             }
-            Interlocked.Exchange(ref endedAt, Stopwatch.GetTimestamp());
+            Interlocked.Exchange(ref endedAt, clock.GetTimestamp());
             Changed?.Invoke();
         }
     }
@@ -214,7 +236,7 @@ public sealed class GeminiLiveSession(ILiveTransport transport, ILiveAudioPlayba
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, sessionToken);
         turnPending = true;
         state = LiveSessionState.Responding;
-        Interlocked.Exchange(ref textSentAt, Stopwatch.GetTimestamp());
+        Interlocked.Exchange(ref textSentAt, clock.GetTimestamp());
         Interlocked.Exchange(ref firstAudioTicks, -1);
         Changed?.Invoke();
         await SendJsonAsync(new JsonObject
@@ -322,8 +344,8 @@ public sealed class GeminiLiveSession(ILiveTransport transport, ILiveAudioPlayba
                             throw new LiveSessionException("Live returned an incomplete PCM audio sample.");
                         sessionToken.ThrowIfCancellationRequested();
                         playback.Append(pcm);
-                        if (!IsMicrophone && Interlocked.Read(ref firstAudioTicks) < 0 && Interlocked.Read(ref textSentAt) > 0)
-                            Interlocked.Exchange(ref firstAudioTicks, Stopwatch.GetElapsedTime(textSentAt).Ticks);
+                        if (!IsMicrophone && Interlocked.Read(ref firstAudioTicks) < 0 && Interlocked.Read(ref textSentAt) >= 0)
+                            Interlocked.Exchange(ref firstAudioTicks, clock.GetElapsedTime(textSentAt).Ticks);
                         state = LiveSessionState.Responding;
                     }
                     if (part.TryGetProperty("text", out var partText) &&
@@ -336,6 +358,7 @@ public sealed class GeminiLiveSession(ILiveTransport transport, ILiveAudioPlayba
             transcript.Append(text);
             if (content.TryGetProperty("turnComplete", out var complete) && complete.GetBoolean())
             {
+                playback.CompleteTurn();
                 transcript.FinishTurn();
                 turnPending = false;
                 state = LiveSessionState.Listening;
@@ -363,14 +386,24 @@ public sealed class GeminiLiveSession(ILiveTransport transport, ILiveAudioPlayba
         }
     }
 
+    private void ForwardPlayback(LivePlaybackTurn turn)
+    {
+        if (!sessionToken.IsCancellationRequested) PlaybackChanged?.Invoke(turn);
+    }
+    private void PlaybackFailed() { try { transport.Abort(); } catch (Exception) { } }
+
     public async ValueTask DisposeAsync()
     {
         await StopAsync().ConfigureAwait(false);
         if (Interlocked.Exchange(ref disposed, 1) != 0)
             return;
-        await Task.Run(playback.Dispose).ConfigureAwait(false);
-        await transport.DisposeAsync().ConfigureAwait(false);
-        stopSource.Dispose();
-        sendGate.Dispose();
+        playback.TurnChanged -= ForwardPlayback;
+        playback.Failed -= PlaybackFailed;
+        try { await Task.Run(playback.Dispose).ConfigureAwait(false); }
+        finally
+        {
+            try { await transport.DisposeAsync().ConfigureAwait(false); }
+            finally { stopSource.Dispose(); sendGate.Dispose(); }
+        }
     }
 }

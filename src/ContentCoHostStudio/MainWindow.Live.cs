@@ -9,6 +9,7 @@ public partial class MainWindow
     private GeminiLiveSession? liveSession;
     private Task liveTask = Task.CompletedTask;
     private int liveRequest;
+    private bool liveCleanupFailed;
     private bool IsLiveMode => UseLiveBox?.IsChecked == true;
 
     private async void LiveModeChanged(object? sender, RoutedEventArgs args)
@@ -18,6 +19,7 @@ public partial class MainWindow
         StopVoice();
         bool wasActive = liveSession?.IsActive == true;
         int request = ++liveRequest;
+        await visits.StopAsync();
         await StopLiveAsync();
         if (!closing && wasActive && request == liveRequest && liveSession != null)
             ResponseBox.Text = liveSession.ResponseText;
@@ -31,6 +33,7 @@ public partial class MainWindow
             return;
         bool wasActive = liveSession?.IsActive == true;
         int request = ++liveRequest;
+        await visits.StopAsync();
         await StopLiveAsync();
         if (!closing && wasActive && request == liveRequest && liveSession != null)
             ResponseBox.Text = liveSession.ResponseText;
@@ -39,7 +42,7 @@ public partial class MainWindow
 
     private void UpdateLiveControls()
     {
-        if (LivePanel is null || LiveBehaviorBox is null || ListenButton is null)
+        if (visits is null || LivePanel is null || LiveBehaviorBox is null || ListenButton is null)
             return;
         bool active = liveSession?.IsActive == true;
         bool busy = active || !liveTask.IsCompleted;
@@ -51,7 +54,7 @@ public partial class MainWindow
         UpdateAudioControls();
         LivePanel.IsVisible = IsLiveMode;
         UseLiveBox.IsEnabled = !closing && !generating;
-        StartLiveButton.IsEnabled = IsLiveMode && !closing && !generating && !busy && speechTask.IsCompleted &&
+        StartLiveButton.IsEnabled = !visits.OwnsLive && ValidVisitSettings() && IsLiveMode && !closing && !generating && !busy && speechTask.IsCompleted &&
             !string.IsNullOrWhiteSpace(ApiKeyBox.Text) && SelectedModel(LiveModelBox)?.IsSupported == true && (mic || !string.IsNullOrWhiteSpace(TranscriptBox.Text));
         StopLiveButton.IsEnabled = !closing && busy;
         SendTranscriptButton.IsVisible = !mic;
@@ -66,16 +69,20 @@ public partial class MainWindow
             ? "Connecting to Google · selected audio upload starts after setup completes"
             : active && liveSession!.IsMicrophone
             ? $"{inputName} STREAMING TO GOOGLE · local captions remain separate"
-            : mic ? $"{inputName} is not streaming to Google. Start Live enables cloud streaming for at most 30 seconds."
+            : mic ? $"{inputName} is not streaming to Google. Start Live enables cloud streaming for the configured Live duration."
             : "Saved transcript only · Live never uploads audio in this mode";
+        UpdateVisitControls(busy);
         if (liveSession != null)
         {
             LiveStatus.Text = $"Live: {liveSession.State} · {liveSession.SessionModel}";
-            LiveCountdown.Text = $"{Math.Max(0, 30 - liveSession.Elapsed.TotalSeconds):0.0} seconds remaining · elapsed {liveSession.Elapsed.TotalSeconds:0.0}s";
+            LiveCountdown.Text = active
+                ? $"{Math.Max(0, liveSession.Duration.TotalSeconds - liveSession.Elapsed.TotalSeconds):0.0} seconds remaining · elapsed {liveSession.Elapsed.TotalSeconds:0.0}s"
+                : $"Session ended after {liveSession.Elapsed.TotalSeconds:0.0}s · configured limit {liveSession.Duration.TotalSeconds:0}s";
             string connection = liveSession.ConnectionTime is { } elapsed ? $"{elapsed.TotalSeconds:0.00}s" : "not connected";
             LiveTimingLabel.Text = $"Connection: {connection}" + (liveSession.IsMicrophone ? " · Audio input mode: silence is not response latency" :
                 liveSession.FirstAudioTime is { } first ? $" · Text send → first audio: {first.TotalSeconds:0.00}s" : " · Text send → first audio: waiting / unavailable");
         }
+        else if (ValidVisitSettings()) LiveCountdown.Text = $"Configured Live window: {SnapshotLiveOptions().DurationSeconds} seconds";
     }
 
     private void StartLiveClicked(object? sender, RoutedEventArgs args)
@@ -83,17 +90,38 @@ public partial class MainWindow
         UpdateLiveControls();
         if (!StartLiveButton.IsEnabled)
             return;
+        BeginLive(false, closingSource.Token);
+    }
+
+    private void BeginLive(bool automatic, CancellationToken token)
+    {
         StopVoice();
         cachedSpeech = null;
         LiveError.IsVisible = false;
         ResponseBox.Text = "";
         ResponseHeading.Text = $"Gemini Live Response · {selectedLiveModel}";
         int request = ++liveRequest;
+        var settings = SnapshotLiveOptions();
+        liveCleanupFailed = false;
         var session = liveFactory();
         liveSession = session;
+        automaticVisit = automatic;
+        automaticSpeaking = false;
+        lastVisitTurn = -1;
         session.Changed += () => Dispatcher.UIThread.Post(() =>
         {
-            if (!closing && request == liveRequest) UpdateLiveControls();
+            if (!closing && request == liveRequest)
+            {
+                if (!session.IsActive) { automaticSpeaking = false; UpdateAvatarFrame(); }
+                UpdateLiveControls();
+            }
+        });
+        session.PlaybackChanged += turn => Dispatcher.UIThread.Post(() =>
+        {
+            if (closing || request != liveRequest || !automaticVisit || !session.IsActive || turn.Id < lastVisitTurn) return;
+            lastVisitTurn = turn.Id;
+            automaticSpeaking = turn.Speaking;
+            UpdateAvatarFrame(); UpdateLiveControls();
         });
         session.ResponseChanged += text => Dispatcher.UIThread.Post(() =>
         {
@@ -102,22 +130,29 @@ public partial class MainWindow
         session.Error += error => Dispatcher.UIThread.Post(() =>
         {
             if (closing || request != liveRequest) return;
-            LiveError.Text = error;
-            LiveError.IsVisible = true;
+            LiveError.Text = error; LiveError.IsVisible = true;
         });
-        var settings = new LiveSessionOptions(LiveMicrophoneBox.IsChecked == true, PersonalityBox.Text ?? "",
-            VoiceBox.SelectedItem as string ?? GeminiSpeechService.DefaultVoice, VoiceStyleBox.Text ?? "", LiveBehaviorBox.Text ?? "", selectedLiveModel);
-        // RunAsync starts the monotonic deadline synchronously, before connection/setup work.
-        liveTask = RunLiveAsync(session, ApiKeyBox.Text ?? "", settings, TranscriptBox.Text ?? "");
-        UpdateLiveControls();
+        liveTask = RunLiveAsync(session, ApiKeyBox.Text ?? "", settings, TranscriptBox.Text ?? "", token);
+        UpdateLiveControls(); UpdateAvatarFrame();
     }
 
-    private async Task RunLiveAsync(GeminiLiveSession session, string key, LiveSessionOptions settings, string savedText)
+    private async Task RunLiveAsync(GeminiLiveSession session, string key, LiveSessionOptions settings, string savedText, CancellationToken token)
     {
-        try { await session.RunAsync(key, settings, savedText, closingSource.Token); }
+        try { await session.RunAsync(key, settings, savedText, token); }
         finally
         {
-            await session.DisposeAsync();
+            try { await session.DisposeAsync(); }
+            catch (Exception)
+            {
+                liveCleanupFailed = true;
+                if (!closing)
+                {
+                    LiveError.Text = "Live audio cleanup failed. Check input/output devices and restart Live or Resume Automatic Visits. The connection was released.";
+                    LiveError.IsVisible = true;
+                }
+            }
+            automaticSpeaking = false;
+            UpdateAvatarFrame();
             UpdateLiveControls();
             // This task is still busy until its finally block returns.
             Dispatcher.UIThread.Post(UpdateLiveControls);
@@ -126,12 +161,14 @@ public partial class MainWindow
 
     private async void StopLiveClicked(object? sender, RoutedEventArgs args)
     {
+        if (automaticVisit && visits.OwnsLive) visits.Dismiss();
         await StopLiveAsync();
         UpdateLiveControls();
     }
 
     private async Task StopLiveAsync()
     {
+        automaticSpeaking = false; UpdateAvatarFrame();
         playbackActivity.Reset();
         if (liveSession != null)
             await liveSession.StopAsync();

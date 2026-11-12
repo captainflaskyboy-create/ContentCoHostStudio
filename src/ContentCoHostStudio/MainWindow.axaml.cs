@@ -23,7 +23,7 @@ public partial class MainWindow : Window
     public MainWindow(HttpClient httpClient, ISpeechPlayback? speechPlayback = null,
         Func<GeminiLiveSession>? liveFactory = null, IMicrophoneSource? microphone = null,
         IAudioDeviceCatalog? audioDevices = null, AudioInputSettings? audioInput = null,
-        AvatarPackLibrary? avatarPacks = null, ISpoutOutput? spoutOutput = null, PlaybackActivityHub? playbackActivity = null)
+        AvatarPackLibrary? avatarPacks = null, ISpoutOutput? spoutOutput = null, PlaybackActivityHub? playbackActivity = null, TimeProvider? visitClock = null)
     {
         this.playbackActivity = playbackActivity ?? new PlaybackActivityHub();
         avatarLibrary = avatarPacks ?? new AvatarPackLibrary();
@@ -38,6 +38,7 @@ public partial class MainWindow : Window
         this.speechPlayback = speechPlayback ?? new SpeechPlayback(this.playbackActivity);
         gemini = new GeminiService(httpClient);
         InitializeComponent();
+        InitializeVisitControls(visitClock);
         InitializeModelControls();
         InitializeSpeechControls();
         InitializeAudioControls();
@@ -196,7 +197,7 @@ public partial class MainWindow : Window
 
         closing = true;
         avatarTimer.Stop();
-        desktopAvatar?.Close();
+        if (desktopAvatar != null) { desktopAvatar.AutomaticPresentation = false; desktopAvatar.Close(); }
         avatarDialog?.Close();
         playbackActivity.Reset();
         ListenButton.IsEnabled = false;
@@ -206,6 +207,7 @@ public partial class MainWindow : Window
         UpdateRefreshButton();
         StopVoice();
         closingSource.Cancel();
+        await visits.StopAsync();
         await StopLiveAsync();
         await liveTask;
         await transcription.StopAsync();

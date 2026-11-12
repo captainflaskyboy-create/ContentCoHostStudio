@@ -54,7 +54,7 @@
             <CheckBox x:Name="MuteLoopbackVoiceBox" Content="Mute co-host audio to prevent feedback (responses still appear)" IsChecked="True" IsVisible="False" IsCheckedChanged="LoopbackMuteChanged" />
             <TextBlock x:Name="LoopbackNote" IsVisible="False" TextWrapping="Wrap" FontSize="12"
                        Text="Computer audio captures all sound on the selected playback device, including YouTube and this co-host. Headphones do not prevent loopback feedback. Keep co-host audio muted, or route YouTube to a different output device in Windows. This selects computer audio instead of the microphone; it does not mix them." />
-            <CheckBox x:Name="UseLiveBox" Content="Use Live API (experimental · 30 seconds)" IsCheckedChanged="LiveModeChanged" />
+            <CheckBox x:Name="UseLiveBox" Content="Use Live API (experimental · configurable duration)" IsCheckedChanged="LiveModeChanged" />
             <TextBlock Text="Gemini Live Model" FontWeight="SemiBold" />
             <ComboBox x:Name="LiveModelBox" HorizontalAlignment="Stretch" MaxDropDownHeight="320" SelectionChanged="LiveModelChanged" />
             <TextBlock x:Name="LiveModelHelp" TextWrapping="Wrap" FontSize="12" />
@@ -64,6 +64,28 @@
                 <TextBlock x:Name="LiveInputNotice" TextWrapping="Wrap" FontWeight="Bold" Foreground="#FFD479" />
                 <TextBlock Text="Live Behavior" />
                 <TextBox x:Name="LiveBehaviorBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="95" />
+                <TextBlock Text="Live reply length · model-guided, not an exact word-count guarantee" />
+                <WrapPanel>
+                    <ComboBox x:Name="LiveReplyLengthBox" Width="230" Margin="0,0,12,8" />
+                    <NumericUpDown x:Name="LiveMaximumWords" Value="20" Minimum="1" Maximum="100" Increment="1" FormatString="0" Width="120" Margin="0,0,12,8" />
+                </WrapPanel>
+                <TextBlock Text="Live duration · includes connection, listening, and replies; speech stops at the deadline" TextWrapping="Wrap" />
+                <WrapPanel>
+                    <NumericUpDown x:Name="LiveDurationValue" Value="30" Minimum="1" Maximum="600" Increment="1" Width="130" Margin="0,0,12,8" />
+                    <ComboBox x:Name="LiveDurationUnit" Width="130" Margin="0,0,12,8" />
+                </WrapPanel>
+                <TextBlock Text="Automatic visits · wait between visits (one second to 24 hours)" />
+                <WrapPanel>
+                    <NumericUpDown x:Name="VisitIntervalValue" Value="5" Minimum="0.0166666666666667" Maximum="1440" Increment="1" Width="130" Margin="0,0,12,8" />
+                    <ComboBox x:Name="VisitIntervalUnit" Width="130" Margin="0,0,12,8" />
+                </WrapPanel>
+                <WrapPanel>
+                    <Button x:Name="StartVisitsButton" Content="Start Automatic Visits" Click="StartVisitsClicked" Margin="0,0,12,8" />
+                    <Button x:Name="StopVisitsButton" Content="Stop Automatic Visits" Click="StopVisitsClicked" Margin="0,0,12,8" />
+                    <Button x:Name="VisitNowButton" Content="Visit Now" Click="VisitNowClicked" Margin="0,0,12,8" />
+                </WrapPanel>
+                <TextBlock x:Name="VisitStatus" Text="Automatic visits off" TextWrapping="Wrap" />
+                <TextBlock Text="Starting automatic visits authorizes repeated cloud audio sessions until stopped. The first visit waits the full interval; Visit Now starts sooner. The avatar appears only while replying. × dismisses this visit. Quiet listening can incur charges; session limits are not a spending budget." TextWrapping="Wrap" FontSize="12" />
                 <WrapPanel>
                     <Button x:Name="StartLiveButton" Content="Start Live" Click="StartLiveClicked" Margin="0,0,12,8" />
                     <Button x:Name="StopLiveButton" Content="Stop Live" Click="StopLiveClicked" Margin="0,0,12,8" />

@@ -43,7 +43,7 @@ public class LiveSessionTests
         Assert.False(setup.GetProperty("realtimeInputConfig").GetProperty("automaticActivityDetection").GetProperty("disabled").GetBoolean());
         foreach (string unsupported in new[] { "tools", "sessionResumption", "thinkingConfig", "proactivity" })
             Assert.DoesNotContain(unsupported, setup.GetRawText());
-        Assert.Equal(TimeSpan.FromSeconds(30), GeminiLiveSession.MaximumDuration);
+        Assert.Equal(TimeSpan.FromMinutes(10), GeminiLiveSession.MaximumDuration);
     }
 
     [Fact]

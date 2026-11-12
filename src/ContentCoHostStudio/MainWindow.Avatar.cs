@@ -26,6 +26,7 @@ public partial class MainWindow
     {
         spriteImages = new(avatarPack);
         AvatarPreview.Images = spriteImages;
+        AvatarPreview.ShowWhenHidden = true;
         RefreshAvatarList();
         avatarTimer.Tick += (_, _) => UpdateAvatarFrame();
         avatarTimer.Start();
@@ -38,7 +39,13 @@ public partial class MainWindow
         if (closing) return;
         var snapshot = animator.Next(avatarPack, playbackActivity.Current, AvatarPoseBox.SelectedItem as string ?? "Normal",
             (int)AvatarSensitivity.Value, AvatarBobBox.IsChecked == true ? 50 : 0, AvatarShakeBox.IsChecked == true ? 25 : 0, Environment.TickCount64);
+        if (visitPresentation) snapshot = snapshot with { Visible = automaticSpeaking && liveSession?.IsActive == true };
         AvatarPreview.Snapshot = snapshot; AvatarPreview.InvalidateVisual();
+        if (visitPresentation && desktopAvatar != null)
+        {
+            if (snapshot.Visible && !desktopAvatar.IsVisible) desktopAvatar.Show();
+            else if (!snapshot.Visible && desktopAvatar.IsVisible) desktopAvatar.Hide();
+        }
         desktopAvatar?.UpdateSnapshot(snapshot);
         spout.Publish(snapshot);
     }
@@ -159,12 +166,17 @@ public partial class MainWindow
     private void DesktopAvatarClicked(object? sender, RoutedEventArgs args)
     {
         if (closing) return;
-        if (desktopAvatar != null) { desktopAvatar.Activate(); return; }
+        EnsureDesktopAvatar();
+        if (!visitPresentation) { desktopAvatar!.Show(); desktopAvatar.Activate(); }
+    }
+    private void EnsureDesktopAvatar()
+    {
+        if (desktopAvatar != null) return;
         var window = new StreamerWindow(spriteImages);
         desktopAvatar = window;
         window.Avatar.Snapshot = AvatarPreview.Snapshot;
+        window.DismissRequested += DismissVisit;
         window.Closed += (_, _) => { if (ReferenceEquals(desktopAvatar, window)) desktopAvatar = null; };
-        window.Show();
     }
     private void SpoutChanged(object? sender, RoutedEventArgs args)
     {

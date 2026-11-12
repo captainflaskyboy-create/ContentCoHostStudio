@@ -24,8 +24,16 @@ public class AvatarHardwareTests
         Assert.True(standardActivity);
         Assert.False(hub.Current.Active);
         using var live = new LiveAudioPlayback(false, hub);
+        var turns = new System.Collections.Concurrent.ConcurrentQueue<LivePlaybackTurn>();
+        live.TurnChanged += turns.Enqueue;
         live.Append(pcm);
+        live.CompleteTurn();
         await LiveTestWait.UntilAsync(() => hub.Current.Active && hub.Current.Level > .01f);
+        await LiveTestWait.UntilAsync(() => turns.Any(t => t.Speaking));
+        await LiveTestWait.UntilAsync(() => turns.Any(t => !t.Speaking));
+        Assert.False(live.IsSpeaking);
+        live.Append(pcm);
+        await LiveTestWait.UntilAsync(() => live.IsSpeaking);
         live.Interrupt();
         Assert.False(hub.Current.Active);
         Assert.Equal(0, live.BufferedBytes);

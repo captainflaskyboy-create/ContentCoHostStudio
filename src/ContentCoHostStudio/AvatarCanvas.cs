@@ -37,12 +37,13 @@ public sealed class AvatarCanvas : Control
 {
     public SpriteImages? Images { get; set; }
     public AvatarOutputSnapshot? Snapshot { get; set; }
+    public bool ShowWhenHidden { get; set; }
     public double SpriteScale { get; set; } = 1;
     public AvatarCanvas() => RenderOptions.SetBitmapInterpolationMode(this, BitmapInterpolationMode.None);
     public override void Render(DrawingContext context)
     {
         base.Render(context);
-        if (Images == null || Snapshot is not { } snapshot) return;
+        if (Images == null || Snapshot is not { } snapshot || (!snapshot.Visible && !ShowWhenHidden)) return;
         var bitmap = Images.Get(snapshot.Sprite);
         var p = AvatarComposition.Calculate(Bounds.Width, Bounds.Height, bitmap.PixelSize.Width, bitmap.PixelSize.Height, snapshot.Rotation, snapshot.X, snapshot.Y, SpriteScale);
         if (p.Scale <= 0) return;

@@ -28,7 +28,7 @@ internal sealed class StreamerHitRegion : IDisposable
     internal readonly record struct AlphaMask(int Width, int Height, byte[] Alpha);
     internal readonly record struct PixelRect(int Left, int Top, int Right, int Bottom);
     internal readonly record struct RegionKey(string Revision, string Sprite, double X, double Y, bool Flip,
-        double Rotation, double Width, double Height, double RenderScale, double SpriteScale);
+        double Rotation, double Width, double Height, double RenderScale, double SpriteScale, double ChromeHeight = 0);
     internal sealed class RegionRequestState
     {
         private RegionKey? desired;
@@ -40,7 +40,7 @@ internal sealed class StreamerHitRegion : IDisposable
         public void Clear() { desired = null; applied = null; }
     }
     private readonly record struct CoarseKey(string Revision, int SpriteWidth, int SpriteHeight,
-        double Rotation, double Width, double Height, double RenderScale, double SpriteScale);
+        double Rotation, double Width, double Height, double RenderScale, double SpriteScale, double ChromeHeight = 0);
     private sealed record RegionRequest(StreamerWindow Window, nint Handle, byte[] Png, AvatarOutputSnapshot Snapshot,
         double Width, double Height, double RenderScale, double SpriteScale, int Generation,
         RegionKey Key);
@@ -71,9 +71,9 @@ internal sealed class StreamerHitRegion : IDisposable
         var spriteHeight = BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(20, 4));
         var key = new RegionKey(snapshot.PackRevision, snapshot.Sprite, snapshot.X, snapshot.Y,
             snapshot.Flip, snapshot.Rotation, window.Bounds.Width, window.Bounds.Height,
-            renderScale, window.Avatar.SpriteScale);
+            renderScale, window.Avatar.SpriteScale, window.ChromeHeight);
         var coarse = new CoarseKey(snapshot.PackRevision, spriteWidth, spriteHeight,
-            snapshot.Rotation, window.Bounds.Width, window.Bounds.Height, renderScale, window.Avatar.SpriteScale);
+            snapshot.Rotation, window.Bounds.Width, window.Bounds.Height, renderScale, window.Avatar.SpriteScale, window.ChromeHeight);
         var alreadyApplied = requestState.SetDesired(key);
 
         // A single cheap rectangle prevents the full window intercepting clicks while the
@@ -81,9 +81,8 @@ internal sealed class StreamerHitRegion : IDisposable
         var coarseChanged = !hasRegion || appliedCoarse != coarse;
         if (coarseChanged)
         {
-            var placement = AvatarComposition.Calculate(window.Bounds.Width, window.Bounds.Height,
-                spriteWidth, spriteHeight, snapshot.Rotation, snapshot.X, snapshot.Y, window.Avatar.SpriteScale);
-            if (placement.Scale <= 0 || !ApplyCoarseRegion(handle, spriteWidth, spriteHeight, placement, renderScale))
+            var placement = Placement(window.Bounds.Width, window.Bounds.Height, spriteWidth, spriteHeight, snapshot, window.Avatar.SpriteScale, window.ChromeHeight);
+            if (placement.Scale <= 0 || !ApplyCoarseRegion(handle, spriteWidth, spriteHeight, placement, renderScale, window.Bounds.Width, window.ChromeHeight))
                 return false;
             appliedCoarse = coarse; requestState.InvalidateApplied(); hasRegion = true;
         }
@@ -134,7 +133,7 @@ internal sealed class StreamerHitRegion : IDisposable
             {
                 var mask = GetMask(request);
                 var rectangles = BuildRectangles(mask, request.Width, request.Height, request.RenderScale,
-                    request.SpriteScale, request.Snapshot, () => request.Generation != Volatile.Read(ref generation));
+                    request.SpriteScale, request.Snapshot, () => request.Generation != Volatile.Read(ref generation), request.Key.ChromeHeight);
                 region = CreateRegion(rectangles);
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
@@ -222,22 +221,22 @@ internal sealed class StreamerHitRegion : IDisposable
     }
 
     internal static PixelRect[] BuildRectangles(AlphaMask mask, double width, double height, double renderScale,
-        double spriteScale, AvatarOutputSnapshot snapshot, Func<bool>? canceled = null)
+        double spriteScale, AvatarOutputSnapshot snapshot, Func<bool>? canceled = null, double chromeHeight = 0)
     {
-        var placement = AvatarComposition.Calculate(width, height, mask.Width, mask.Height,
-            snapshot.Rotation, snapshot.X, snapshot.Y, spriteScale);
+        var placement = Placement(width, height, mask.Width, mask.Height, snapshot, spriteScale, chromeHeight);
         if (placement.Scale <= 0) return [];
         var pixelWidth = (int)Math.Ceiling(width * renderScale);
         var pixelHeight = (int)Math.Ceiling(height * renderScale);
         var bounds = SpriteBounds(mask.Width, mask.Height, placement, renderScale);
         var left = Math.Max(0, bounds.Left); var right = Math.Min(pixelWidth, bounds.Right);
-        var top = Math.Max(0, bounds.Top); var bottom = Math.Min(pixelHeight, bounds.Bottom);
+        var top = Math.Max((int)Math.Ceiling(chromeHeight * renderScale), bounds.Top); var bottom = Math.Min(pixelHeight, bounds.Bottom);
         var cosine = Math.Cos(placement.Radians);
         var sine = Math.Sin(placement.Radians);
         var inverseScale = 1 / (placement.Scale * renderScale);
         var centerX = placement.CenterX * renderScale;
         var centerY = placement.CenterY * renderScale;
         var rectangles = new List<PixelRect>();
+        if (chromeHeight > 0) rectangles.Add(DismissRectangle(width, chromeHeight, renderScale));
         for (var y = top; y < bottom; y++)
         {
             if ((y & 7) == 0 && canceled?.Invoke() == true) throw new OperationCanceledException();
@@ -257,6 +256,16 @@ internal sealed class StreamerHitRegion : IDisposable
             }
         }
         return rectangles.ToArray();
+    }
+
+    internal static PixelRect DismissRectangle(double width, double chromeHeight, double scale) => new(
+        (int)Math.Floor((width - 32) / 2 * scale), 0, (int)Math.Ceiling((width + 32) / 2 * scale), (int)Math.Ceiling(chromeHeight * scale));
+    private static AvatarComposition Placement(double width, double height, int spriteWidth, int spriteHeight,
+        AvatarOutputSnapshot snapshot, double spriteScale, double chromeHeight)
+    {
+        var p = AvatarComposition.Calculate(width, height - chromeHeight, spriteWidth, spriteHeight,
+            snapshot.Rotation, snapshot.X, snapshot.Y, spriteScale);
+        return p with { CenterY = p.CenterY + chromeHeight };
     }
 
     private static PixelRect SpriteBounds(int spriteWidth, int spriteHeight, AvatarComposition placement, double renderScale)
@@ -297,10 +306,17 @@ internal sealed class StreamerHitRegion : IDisposable
     }
 
     private static bool ApplyCoarseRegion(nint handle, int spriteWidth, int spriteHeight,
-        AvatarComposition placement, double renderScale)
+        AvatarComposition placement, double renderScale, double width, double chromeHeight)
     {
         var bounds = SpriteBounds(spriteWidth, spriteHeight, placement, renderScale);
         var region = CreateRectRgn(bounds.Left, bounds.Top, bounds.Right, bounds.Bottom);
+        if (region != 0 && chromeHeight > 0)
+        {
+            var button = DismissRectangle(width, chromeHeight, renderScale);
+            var buttonRegion = CreateRectRgn(button.Left, button.Top, button.Right, button.Bottom);
+            try { if (buttonRegion == 0 || CombineRgn(region, region, buttonRegion, 2) == 0) { DeleteObject(region); return false; } }
+            finally { if (buttonRegion != 0) DeleteObject(buttonRegion); }
+        }
         if (region == 0) return false;
         try
         {
@@ -359,6 +375,7 @@ internal sealed class StreamerHitRegion : IDisposable
         ClearPack();
     }
 
+    [DllImport("gdi32.dll")] private static extern int CombineRgn(nint destination, nint first, nint second, int mode);
     [DllImport("gdi32.dll")] private static extern nint CreateRectRgn(int left, int top, int right, int bottom);
     [DllImport("gdi32.dll")] private static extern nint ExtCreateRegion(nint transform, uint byteCount, nint data);
     [DllImport("gdi32.dll")] private static extern bool DeleteObject(nint region);

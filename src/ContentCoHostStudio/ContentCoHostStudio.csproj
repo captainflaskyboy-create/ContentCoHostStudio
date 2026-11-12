@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <ApplicationIcon>Assets/Starter/cfb_avatar_pack_app_icon.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="ContentCoHostStudio.Tests" />

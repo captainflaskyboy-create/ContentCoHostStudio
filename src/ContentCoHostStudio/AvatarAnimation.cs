@@ -220,7 +220,7 @@ public sealed class SpeechResponse
 }
 
 /// <summary>One immutable animation update shared by every presentation surface.</summary>
-public sealed record AvatarOutputSnapshot(string Sprite, double X, double Y, bool Flip, double Rotation, long Sequence, string PackRevision = "");
+public sealed record AvatarOutputSnapshot(string Sprite, double X, double Y, bool Flip, double Rotation, long Sequence, string PackRevision = "", bool Visible = true);
 
 public readonly record struct AvatarComposition(double Scale, double Radians, double CenterX, double CenterY)
 {
