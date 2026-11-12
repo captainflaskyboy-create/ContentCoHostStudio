@@ -1,0 +1,45 @@
+SOURCE PROJECT RECORD: This file describes the existing Stream Avatar Studio bundle, not Content CoHost Studio runtime behavior. Content CoHost Studio copies the local tool folder beside its executable; it does not embed, extract, install, or download FFmpeg. This record is retained for source/dependency provenance.
+
+# Native source materials for the sale release
+
+Run `./scripts/collect-native-source-materials.ps1` to download and verify the archives below into ignored `artifacts/source-materials`. Run it with `-Offline` to verify an existing copy without network access. `create-windows-source-archive.ps1` combines these materials with the matching SoundFlow source/relink kit in a distributable Windows source ZIP. These archives are **not included in the app EXE** and must be freely available with the corresponding binary release. Public distribution remains gated on publication and final review.
+
+## Bundled Windows FFmpeg: six non-system DLLs
+
+The locally built Windows bundle in `FFMPEG_BUNDLE.md` uses these exact MSYS2 UCRT64 packages. Each downloaded source-only archive contains the upstream source, package `PKGBUILD`, and the package's patches. The same GCC archive covers both `libgcc_s_seh-1.dll` and `libstdc++-6.dll`. License notices for the six DLLs are in `native/FFmpeg/win-x64/notices`.
+
+| DLL | Source-only archive | SHA-256 |
+| --- | --- | --- |
+| `libopenh264-7.dll` | [OpenH264 2.6.0-2](https://mirror.msys2.org/mingw/sources/mingw-w64-openh264-2.6.0-2.src.tar.zst) | `7ED237E1B2E8F8A4A1542E294414C9C557AD690E60140C8540A9B1D55588B850` |
+| `libopus-0.dll` | [Opus 1.6.1-1](https://mirror.msys2.org/mingw/sources/mingw-w64-opus-1.6.1-1.src.tar.zst) | `F9F4F73A700EDCD35E11D7F47BCB164C850B781FA2CCCB48CD30D505262B43A2` |
+| `libvpx-1.dll` | [libvpx 1.17.0-1](https://mirror.msys2.org/mingw/sources/mingw-w64-libvpx-1.17.0-1.src.tar.zst) | `7B322FFFE50501D26BBBB489135E5001F6096DA2529AD992C712C00C94BB38DD` |
+| `libwinpthread-1.dll` | [winpthreads 14.0.0.r426.g4564ee4b5-1](https://mirror.msys2.org/mingw/sources/mingw-w64-winpthreads-14.0.0.r426.g4564ee4b5-1.src.tar.zst) | `5493832DE1B7E24F09EDB556ED409091B0844F9677212C4865618D6F93C508BE` |
+| `libgcc_s_seh-1.dll`, `libstdc++-6.dll` | [GCC 16.2.0-4](https://mirror.msys2.org/mingw/sources/mingw-w64-gcc-16.2.0-4.src.tar.zst) | `A1792A44764405BC365746E0E60F0DAA122076CEC0DDDD35A781D141F94273CF` |
+
+The FFmpeg 9.0.2 source archive, its hash, configure flags, compiler versions, and binary hashes are in `FFMPEG_BUNDLE.md` and `FFMPEG_WINDOWS_BUILD_STEPS.md`. Keep those with the above packages. Windows development builds now embed the local build rather than the older BtbN executable. These source archives apply to the Windows bundle now selected by the app; Linux still uses BtbN.
+
+## Separate SoundFlow codec issue
+
+`SoundFlow.Codecs.FFMpeg` 1.4.0's NuGet metadata points to SoundFlow commit `c9bcf73512048181f25cb64cd824f4a406f0f96c`. Its `Native/ffmpeg-codec/CMakeLists.txt` selects FFmpeg 8.0 and LAME 3.100, then statically links their libraries into the native wrapper. We downloaded and validated:
+
+| Source | SHA-256 |
+| --- | --- |
+| [FFmpeg 8.0](https://ffmpeg.org/releases/ffmpeg-8.0.tar.gz) | `CCE1136D38C389E6BAAA452D6BABC384CB2D3A9406EBE48C36A48F3EE115D8DF` |
+| [LAME 3.100](https://download.videolan.org/pub/pub/contrib/lame/lame-3.100.tar.gz) | `DDFE36CAB873794038AE2C1210557AD34857A4B6BDC515785D1DA9E175B1DA1E` |
+
+The SourceForge URL in SoundFlow's CMake recipe returned an HTML page in this environment, so the LAME archive above came from VideoLAN's mirror. Its SHA-256 matches [SourceForge's listing](https://sourceforge.net/projects/lame/files/lame/3.100/lame-3.100.tar.gz/download), and `tar -tf` confirmed it is a source archive. SoundFlow's source checkout is under ignored `artifacts/soundflow-source` at the NuGet-listed commit. The collection script verifies that checkout if present and creates `artifacts/source-materials/soundflow/soundflow-native-c9bcf735.tar` containing the native wrapper source, CMake recipe, workflow, and license (SHA-256 `D8E7E1DDC35F4902F5F59227586B2D40B4AFA92D1CBD1DE6107BA56444E5D068`).
+
+The original NuGet `win-x64` `soundflow-ffmpeg.dll` has SHA-256 `6F4D1A9A2EE789E49852CBF1767FC6D168966006AFB0E1EFA168DFE182579C8D`. Static strings include `FFmpeg version 8.0` and `LAME3.100`, consistent with the CMake recipe, but they do not prove its complete build configuration or source identity. Linux x64 and macOS x64/ARM64 NuGet binaries also contain those version strings; their exact build provenance and relinking materials remain unverified.
+
+**Windows x64 replacement:** The application now excludes the NuGet package's native assets on Windows x64 and ships a locally rebuilt `soundflow-ffmpeg.dll`, SHA-256 `4B3F7806B3A98E2388B5DD1F4ABE5FA2BDE6C245E0E4F7FE43D619A19D96DF87`. It was built from the verified SoundFlow, FFmpeg 8.0, and LAME 3.100 sources with MSYS2 UCRT64 GCC 16.2.0. The FFmpeg build reported LGPL 2.1-or-later with GPL/nonfree disabled. The only changes to SoundFlow's CMake recipe were replacing its two download URLs with local archive paths. Its compiled wrapper object and the five static FFmpeg/LAME libraries were retained in an ignored Windows source/relink kit. A separate DLL relinked from those inputs passed the WAV/MP3/OGG audio tests.
+
+`scripts/build-soundflow-codec-windows.ps1` repeats the Windows build from verified local archives and records its configuration and hash. `scripts/create-soundflow-windows-source-kit.ps1` gathers the sources (including GCC runtime source), object, static libraries, configuration, notices, and relink script. `scripts/relink-soundflow-windows.ps1` links a replacement DLL without overwriting the distributed one. The build script also accepts `-SourceMaterialsDirectory` so a recipient can rebuild directly from the kit. Windows tests and a private single-file publish passed with the replacement. The kit must be supplied alongside any sale download containing this binary; its legal sufficiency still needs final review. Linux and macOS retain the upstream NuGet native binaries and remain blocked until equivalent source/relink materials are established or those binaries are replaced by controlled builds.
+
+The matching Windows kit is staged at `artifacts/soundflow-source-kit/StreamAvatarStudio-SoundFlow-win-x64-sources.zip` (SHA-256 `C9926A702C56A5FB6BBAA0C0CD1CA12EA49ED686430EFB524F2CA640C4C6C4C8`, 132,974,856 bytes). Its 19 ZIP entries were checked against the included manifest; the DLL entry matches the application binary. A relinked DLL passed 19 audio/emotion tests (4 hardware checks skipped). A clean rebuild from the kit's source archives also passed those tests, but produced a different DLL hash: the build is functionally repeatable, not bit-for-bit reproducible. The archive is currently in ignored local artifacts and must be made available with a public release after review.
+
+## Before a sale build
+
+1. Review the assembled Windows corresponding-source ZIP against the actual FFmpeg and SoundFlow binaries and their license notices. The Windows app integration and export tests have passed; final distribution review remains open. Linux needs its own separate source/build review.
+2. Publish the exact Windows source ZIP at a free public URL beside the paid Ko-fi download and include it in the Steam depot. Record its SHA-256 and the final EXE/source/dependency mapping in the release manifest.
+3. Produce and test matching SoundFlow builds/source kits for Linux and macOS, or otherwise establish the exact source/build and relinking path for their NuGet binaries. The Windows x64 replacement and kit are ready for final distribution review, not automatic legal clearance.
+4. Keep the release publish gate closed until these checks are finished. Consult qualified licensing counsel for the final commercial distribution review.

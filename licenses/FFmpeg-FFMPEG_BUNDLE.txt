@@ -1,0 +1,49 @@
+SOURCE PROJECT RECORD: This file describes the existing Stream Avatar Studio bundle, not Content CoHost Studio runtime behavior. Content CoHost Studio copies the local tool folder beside its executable; it does not embed, extract, install, or download FFmpeg. This record is retained for source/dependency provenance.
+
+# Bundled FFmpeg 9.0.2 and release gate
+
+Windows x64 and Linux x64 development builds embed pinned FFmpeg 9.0.2 `ffmpeg` and `ffprobe` executables. The app verifies their SHA-256 hashes and extracts them to a versioned `StreamAvatarStudio.Avalonia/NativeTools` folder on first use. Users can instead select their own FFmpeg installation; a missing selected path falls back to the bundle while retaining the preference. No runtime download occurs. SoundFlow's FFmpeg codec used for WAV/MP3/OGG playback is a separate dependency on every platform. Normal publish commands stop before creating a public release artifact while the source-material gates below are open. `-DevelopmentOnly` (PowerShell) or `--development-only` (shell) produces a private test package under `artifacts/development-*`.
+
+VS Code F5 and development-only publish scripts call the `prepare-ffmpeg` scripts at build time. Windows x64 now uses the locally built files under `native/FFmpeg/win-x64`; Linux x64 still downloads its pinned BtbN archive at build time. The files must pass SHA-256 checks. Normal publish commands stop before preparation or output creation while the release gates are open. macOS has no bundled export FFmpeg and requires a user-selected installation, but still includes the SoundFlow codec.
+
+The **Linux x64** binary is an LGPL 9.0.2 build from [BtbN FFmpeg-Builds, 2026-09-19](https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-09-19-13-11). Its release build scripts are at commit `3e6685eda92f9288c15ac320139622dcedca09a4`. The former BtbN Windows binary is listed below only for historical identification; new Windows builds no longer include it:
+
+| Target | Archive SHA-256 | ffmpeg SHA-256 | ffprobe SHA-256 |
+| --- | --- | --- | --- |
+| win-x64 | `F0A85CD3977D987992A90D0E2A1E563D2AEB97078823A42216CDCE154D8119CB` | `24B9346567355EFEF58EF5E34FD408DD83C473198CADCF0AF3BF81C77411219C` | `AC44679BCDDDF28B8529708A704808C9D399ED4C0816D01EB297F337B2200AAB` |
+| linux-x64 | `8F7B2F443E17543F7C0BC3AE7E533BB54DDC7257AEDC35ABE06E548E827B1705` | `2DD50F08215F57667CF2A7A313B834454DA944DF872054E5C347F837C31B9219` | `A30B53DF5CBF81540CF57F90C9F67EE3AF2847AB43CB2036B5AAAF67F2893095` |
+
+The former BtbN Windows build reported `n9.0.2-20260919`; it is no longer bundled. The FFmpeg 9.0.2 source is at [ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz](https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz), SHA-256 `8C3850283EB25FA026482078A04051E0BE17347B09EF81A0849BEC15A96E002E`. **Do not distribute a bundled build yet:** corresponding source, build configuration, dependency sources, and notices for the binaries actually shipped must be supplied alongside the download, following [FFmpeg's distribution guidance](https://ffmpeg.org/legal.html). The Linux BtbN source-material gate remains open.
+
+There is a second, independent source-material check for audio decoding: `SoundFlow.Codecs.FFMpeg` 1.4.0 contains a native wrapper statically linked to FFmpeg and LAME. Its NuGet metadata names SoundFlow commit `c9bcf73512048181f25cb64cd824f4a406f0f96c`; that revision includes `Native/ffmpeg-codec/soundflow-ffmpeg.c`, `.h`, and CMake build instructions selecting FFmpeg 8.0 and LAME 3.100. Windows x64 now uses a locally rebuilt native DLL from those pinned sources, with a tested source/relink kit described in [NATIVE_SOURCE_MATERIALS.md](NATIVE_SOURCE_MATERIALS.md). Linux and macOS still use the NuGet native binaries, whose exact build/relink materials remain unverified. The package notice is copied into folder builds and embedded/extracted for single-file builds. The public gate stays closed for those platforms and for final source-kit distribution review.
+
+Current macOS x64/ARM64 `.app` packaging has no bundled video-export FFmpeg. Video export there requires a user-selected installation. The SoundFlow codec source-material gate still applies, and the Mac application and export behavior remain experimental and untested until checked on a Mac.
+
+## Locally built Windows x64 bundle
+
+The full command-by-command record is in [FFMPEG_WINDOWS_BUILD_STEPS.md](FFMPEG_WINDOWS_BUILD_STEPS.md).
+
+On 2026-10-03, a local MSYS2 UCRT64 build was made from the official `ffmpeg-9.0.2.tar.xz` archive (SHA-256 `8C3850283EB25FA026482078A04051E0BE17347B09EF81A0849BEC15A96E002E`). The recorded configure line is:
+
+```sh
+./configure --enable-version3 --disable-gpl --disable-nonfree --disable-autodetect --disable-doc --disable-ffplay --disable-network --disable-avdevice --enable-libopenh264 --enable-libvpx --enable-libopus
+make -j4  # interrupted when MSYS2 exited
+make -j2  # resumed and completed the build
+```
+
+The build used MSYS2 UCRT64 GCC 16.2.0-4, NASM 3.02-1, OpenH264 2.6.0-2, libvpx 1.17.0-1, and Opus 1.6.1-1. The executables require six non-system DLLs in the same folder; the last two are indirect dependencies of OpenH264. These are candidate binary hashes, **not** a cleared source package:
+
+| File | SHA-256 |
+| --- | --- |
+| `ffmpeg.exe` | `499F3F437D9B0C03AA82DE665FAD92A4BDEAF54D6D56E805D3C7AB5A2928B32F` |
+| `ffprobe.exe` | `42233AF3482F65250D7521B1632DC82356A1B9D49CCF008E49B58B54F910ABA1` |
+| `libopenh264-7.dll` | `6722D93CB98A1D804C5469B9F21A46E2A7ACC4AA134C932B339CBD59FBE03CA2` |
+| `libopus-0.dll` | `C12F9A671A106C649A5517D28061670AA57C805D242B80764853A7551099498D` |
+| `libvpx-1.dll` | `759BB95B0CD6C75BFCE910F003B26A2D95ED3C94EF1A20DCFD4C89A0569F2016` |
+| `libwinpthread-1.dll` | `76CC52ADFCDB8C800813B2AE8DA42A908934EB1EE54CE8E9744FC8D703C76EE1` |
+| `libgcc_s_seh-1.dll` | `68CA4574B331402879DEC403BA4F14491C9B8FC4AA3F4A41432008714B9BC5DF` |
+| `libstdc++-6.dll` | `B30DBD914D903992ACB28B38455947153886656BEAFBD91C465C31AA258F9C45` |
+
+Both executables ran from an isolated Windows folder. The owner manually tested MKV, MOV, and WebM exports in StreamAvatarStudio. The automated export matrix passed all 9 `VideoExportTests`, covering format, size, narration, alpha, cancellation, and destination protection; its MP3/OGG narration fixtures use the audio codec rather than requiring MP3 encoding in the export tool. Windows development builds now embed these eight files, verify them before extraction, and extract them to `FFmpeg-9.0.2-local/win-x64` in application data. The old BtbN Windows hashes above are historical; the public publish gate remains closed.
+
+The six DLLs' license notices are under `native/FFmpeg/win-x64/notices` with a package-to-file map. The exact MSYS2 source-only packages and build recipes have been downloaded, hash-verified, and documented in [NATIVE_SOURCE_MATERIALS.md](NATIVE_SOURCE_MATERIALS.md). Windows single-file development publishing now embeds the binaries and notices; a private 252,265,573-byte EXE was produced. Corresponding-source distribution, any required relinking materials, the Linux/macOS SoundFlow gate, and final distribution review remain outstanding.

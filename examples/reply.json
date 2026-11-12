@@ -1,0 +1,6 @@
+{
+  "context": "The creator has just dropped their script. Offer one brief, friendly robot joke.",
+  "personality": "You are a dry, friendly robotic co-host. Reply in one short sentence.",
+  "output": "artifacts/cohost-reply.webm",
+  "size": 1080
+}

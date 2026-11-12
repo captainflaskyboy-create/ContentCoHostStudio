@@ -1,0 +1,138 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:ContentCoHostStudio"
+        x:Class="ContentCoHostStudio.MainWindow"
+        Title="Content CoHost Studio" Width="900" Height="880"
+        MinWidth="550" MinHeight="500">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24" Spacing="12">
+            <TextBlock Text="Content CoHost Studio" FontSize="26" FontWeight="SemiBold" />
+            <TextBlock Text="Offline captions · Personality-driven Gemini replies" Opacity="0.7" />
+
+            <TextBlock Text="Co-host Avatar" FontWeight="SemiBold" />
+            <local:AvatarCanvas x:Name="AvatarPreview" Width="256" Height="256" HorizontalAlignment="Left" />
+            <ComboBox x:Name="AvatarPackBox" HorizontalAlignment="Stretch" SelectionChanged="AvatarPackChanged" />
+            <WrapPanel>
+                <Button x:Name="ImportAvatarButton" Content="Import Avatar Pack" Click="ImportAvatarClicked" Margin="0,0,10,8" />
+                <Button x:Name="RenameAvatarButton" Content="Rename" Click="RenameAvatarClicked" Margin="0,0,10,8" />
+                <Button x:Name="RemoveAvatarButton" Content="Remove" Click="RemoveAvatarClicked" Margin="0,0,10,8" />
+                <Button x:Name="DesktopAvatarButton" Content="Show Desktop Avatar" Click="DesktopAvatarClicked" Margin="0,0,10,8" />
+            </WrapPanel>
+            <TextBlock Text="Pose" />
+            <ComboBox x:Name="AvatarPoseBox" HorizontalAlignment="Stretch" />
+            <TextBlock Text="Mouth sensitivity" />
+            <Slider x:Name="AvatarSensitivity" Minimum="0" Maximum="100" Value="50" />
+            <WrapPanel>
+                <CheckBox x:Name="AvatarBobBox" Content="Idle bob" Margin="0,0,16,0" />
+                <CheckBox x:Name="AvatarShakeBox" Content="Talking shake" />
+            </WrapPanel>
+            <CheckBox x:Name="SpoutBox" Content="Enable Spout2 output to OBS" IsCheckedChanged="SpoutChanged" />
+            <TextBlock x:Name="SpoutStatus" TextWrapping="Wrap" FontSize="12" />
+            <TextBlock x:Name="AvatarStatus" Text="Animates from co-host playback only. Imported avatar packs are saved; speech and session data are not." TextWrapping="Wrap" FontSize="12" />
+            <TextBlock Text="PNG avatar packs only; GIF events are ignored. Computer-audio feedback mute also keeps the avatar's mouth idle. OBS audio must be captured separately." TextWrapping="Wrap" FontSize="12" Opacity="0.7" />
+
+            <TextBlock Text="Gemini API Key" FontWeight="SemiBold" />
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                <TextBox x:Name="ApiKeyBox" PasswordChar="●" PlaceholderText="Paste your Gemini API key (memory only)"
+                         TextChanged="ApiKeyChanged" />
+                <Button x:Name="RefreshModelsButton" Grid.Column="1" Content="Refresh Models" Click="RefreshModelsClicked" IsEnabled="False" />
+            </Grid>
+            <TextBlock x:Name="CatalogStatus" Text="Default models shown. Enter your key and click Refresh Models for available options."
+                       TextWrapping="Wrap" FontSize="12" Opacity="0.7" />
+
+            <TextBlock Text="Personality Prompt" FontWeight="SemiBold" />
+            <TextBox x:Name="PersonalityBox" AcceptsReturn="True" TextWrapping="Wrap"
+                     MinHeight="100" MaxHeight="180" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+
+            <TextBlock Text="Audio Input" FontWeight="SemiBold" />
+            <ComboBox x:Name="AudioSourceBox" HorizontalAlignment="Stretch" SelectionChanged="AudioSourceChanged" />
+            <TextBlock x:Name="AudioDeviceLabel" Text="Microphone" />
+            <ComboBox x:Name="MicrophoneDeviceBox" HorizontalAlignment="Stretch" SelectionChanged="AudioDeviceChanged" />
+            <ComboBox x:Name="ComputerAudioDeviceBox" HorizontalAlignment="Stretch" IsVisible="False" SelectionChanged="AudioDeviceChanged" />
+            <Button x:Name="RefreshAudioDevicesButton" Content="Refresh Audio Devices" Click="RefreshAudioDevicesClicked" />
+            <TextBlock x:Name="AudioDeviceStatus" Text="Choose an input before listening. Stop local listening and Live before changing devices." TextWrapping="Wrap" FontSize="12" />
+            <CheckBox x:Name="MuteLoopbackVoiceBox" Content="Mute co-host audio to prevent feedback (responses still appear)" IsChecked="True" IsVisible="False" IsCheckedChanged="LoopbackMuteChanged" />
+            <TextBlock x:Name="LoopbackNote" IsVisible="False" TextWrapping="Wrap" FontSize="12"
+                       Text="Computer audio captures all sound on the selected playback device, including YouTube and this co-host. Headphones do not prevent loopback feedback. Keep co-host audio muted, or route YouTube to a different output device in Windows. This selects computer audio instead of the microphone; it does not mix them." />
+            <CheckBox x:Name="UseLiveBox" Content="Use Live API (experimental · 30 seconds)" IsCheckedChanged="LiveModeChanged" />
+            <TextBlock Text="Gemini Live Model" FontWeight="SemiBold" />
+            <ComboBox x:Name="LiveModelBox" HorizontalAlignment="Stretch" MaxDropDownHeight="320" SelectionChanged="LiveModelChanged" />
+            <TextBlock x:Name="LiveModelHelp" TextWrapping="Wrap" FontSize="12" />
+            <StackPanel x:Name="LivePanel" IsVisible="False" Spacing="8">
+                <TextBlock Text="Gemini Live · uses the selected Live model, voice, and style" FontWeight="SemiBold" />
+                <CheckBox x:Name="LiveMicrophoneBox" Content="Selected audio input (off = Saved transcript)" IsChecked="True" IsCheckedChanged="LiveInputChanged" />
+                <TextBlock x:Name="LiveInputNotice" TextWrapping="Wrap" FontWeight="Bold" Foreground="#FFD479" />
+                <TextBlock Text="Live Behavior" />
+                <TextBox x:Name="LiveBehaviorBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="95" />
+                <WrapPanel>
+                    <Button x:Name="StartLiveButton" Content="Start Live" Click="StartLiveClicked" Margin="0,0,12,8" />
+                    <Button x:Name="StopLiveButton" Content="Stop Live" Click="StopLiveClicked" Margin="0,0,12,8" />
+                    <Button x:Name="SendTranscriptButton" Content="Send Transcript" Click="SendLiveTranscriptClicked" Margin="0,0,12,8" />
+                </WrapPanel>
+                <TextBlock x:Name="LiveStatus" Text="Not started" />
+                <TextBlock x:Name="LiveCountdown" Text="30.0 seconds remaining" />
+                <TextBlock x:Name="LiveTimingLabel" TextWrapping="Wrap" FontSize="12" />
+                <TextBlock x:Name="LiveError" TextWrapping="Wrap" Foreground="#FFB4AB" IsVisible="False" />
+                <TextBlock Text="Use headphones. Live speaks directly; Auto-speak and the TTS model do not apply. Listening can incur cloud charges even while the co-host is quiet. No automatic reconnect." TextWrapping="Wrap" FontSize="12" />
+            </StackPanel>
+            <TextBlock Text="Local audio listening · offline captions" FontWeight="SemiBold" />
+            <StackPanel Orientation="Horizontal" Spacing="14">
+                <Button x:Name="ListenButton" Content="Start Listening" Click="ListenClicked" />
+                <TextBlock x:Name="ListeningStatus" Text="Stopped" VerticalAlignment="Center" />
+            </StackPanel>
+            <TextBlock x:Name="MicrophoneError" Foreground="#FFB4AB" TextWrapping="Wrap" IsVisible="False" />
+
+            <TextBlock Text="Live Captions" FontWeight="SemiBold" />
+            <Border Background="#202B36" CornerRadius="6" Padding="12" MinHeight="60">
+                <TextBlock x:Name="CaptionsText" Text="" TextWrapping="Wrap" />
+            </Border>
+
+            <TextBlock Text="Saved Transcript" FontWeight="SemiBold" />
+            <TextBox x:Name="TranscriptBox" AcceptsReturn="True" TextWrapping="Wrap"
+                     Height="160" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     PlaceholderText="Finalized speech appears here. You can also type or edit it."
+                     TextChanged="InputChanged" />
+            <Button x:Name="ClearButton" Content="Clear Transcript" Click="ClearClicked" />
+
+            <TextBlock Text="Text Response Model" FontWeight="SemiBold" />
+            <ComboBox x:Name="TextModelBox" HorizontalAlignment="Stretch" MaxDropDownHeight="320" SelectionChanged="TextModelChanged" />
+            <StackPanel Orientation="Horizontal" Spacing="14">
+                <Button x:Name="GenerateButton" Content="Generate Response" Click="GenerateClicked" IsEnabled="False" />
+                <TextBlock x:Name="GenerationStatus" VerticalAlignment="Center" />
+            </StackPanel>
+            <TextBlock x:Name="TextTimingLabel" Text="Text generation: not requested" FontSize="12" />
+            <TextBlock x:Name="LastTextModel" Text="Last text model: none" FontSize="12" TextWrapping="Wrap" />
+            <TextBlock Text="Generate sends the transcript and personality to Google. Auto-speak or Replay sends the reply and voice style for speech. Live captions stay local."
+                       TextWrapping="Wrap" FontSize="12" Opacity="0.7" />
+            <TextBlock x:Name="GeminiError" Foreground="#FFB4AB" TextWrapping="Wrap" IsVisible="False" />
+
+            <TextBlock x:Name="ResponseHeading" Text="Gemini Response" FontWeight="SemiBold" />
+            <TextBox x:Name="ResponseBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                     Height="180" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     PlaceholderText="Your co-host's reply will appear here. Select text to copy it." />
+
+            <TextBlock Text="Co-host Voice" FontWeight="SemiBold" />
+            <TextBlock Text="TTS Model" />
+            <ComboBox x:Name="SpeechModelBox" HorizontalAlignment="Stretch" MaxDropDownHeight="320" SelectionChanged="SpeechModelChanged" />
+            <WrapPanel Orientation="Horizontal">
+                <CheckBox x:Name="AutoSpeakBox" Content="Auto-speak" IsChecked="True" Margin="0,0,16,8"
+                          IsCheckedChanged="AutoSpeakChanged" />
+                <ComboBox x:Name="VoiceBox" Width="130" Margin="0,0,12,8" SelectionChanged="VoiceSettingsChanged" />
+                <ComboBox x:Name="VoicePresetBox" Width="230" Margin="0,0,0,8" SelectionChanged="VoicePresetChanged" />
+            </WrapPanel>
+            <TextBlock Text="Voice Style" />
+            <TextBox x:Name="VoiceStyleBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="85" MaxHeight="140"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto" TextChanged="InputChanged" />
+            <StackPanel Orientation="Horizontal" Spacing="14">
+                <Button x:Name="SpeakButton" Content="Replay / Speak" Click="SpeakClicked" IsEnabled="False" />
+                <Button x:Name="StopVoiceButton" Content="Stop Voice" Click="StopVoiceClicked" IsEnabled="False" />
+                <TextBlock x:Name="SpeechStatus" Text="Stopped" VerticalAlignment="Center" />
+            </StackPanel>
+            <TextBlock x:Name="VoiceTimingLabel" Text="Voice preparation: not requested" FontSize="12" />
+            <TextBlock x:Name="LastSpeechModel" Text="Last audio model: none" FontSize="12" TextWrapping="Wrap" />
+            <TextBlock Text="Listening continues during speech. Use headphones to avoid transcribing the co-host. Cloud speech has separate usage charges."
+                       TextWrapping="Wrap" FontSize="12" Opacity="0.7" />
+            <TextBlock x:Name="SpeechError" Foreground="#FFB4AB" TextWrapping="Wrap" IsVisible="False" />
+        </StackPanel>
+    </ScrollViewer>
+</Window>
