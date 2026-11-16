@@ -1,12 +1,26 @@
 # Windows portable releases
 
-Download the Windows x64 ZIP from [GitHub Releases](https://github.com/captainflaskyboy-create/ContentCoHostStudio/releases), extract the entire folder, and run `ContentCoHostStudio.exe`. The runtime is included; keep the accompanying files beside the executable. This is an unsigned portable application, not an installer.
+Download the Windows x64 **EXE** from [GitHub Releases](https://github.com/captainflaskyboy-create/ContentCoHostStudio/releases) and double-click it. Starting with v1.0.1, everything needed by the application is bundled in that file: the .NET runtime, libraries, English model, Spout2 sender, FFmpeg/ffprobe, documentation, and dependency notices. No supporting folder needs to stay beside the EXE. This is an unsigned portable application, not an installer. v1.0.0's ZIP is the older folder-based alternative.
+
+This is a single-file **distribution**, not a zero-disk-use application. Native libraries, the Vosk model, and child executables require filesystem paths. .NET automatically unpacks the embedded files under `%TEMP%/.net/<executable>/<bundle-id>` (or `DOTNET_BUNDLE_EXTRACT_BASE_DIR` when explicitly configured). First launch needs time and disk space to extract them; subsequent launches reuse the cache. Deleting the cache while the app is closed is safe; it is recreated from the EXE. Do not delete it while the app or a CLI job is running. The EXE can be moved or renamed and does not require administrator installation. Imported avatar artwork still uses the existing app-data library; credentials and conversations remain memory-only.
+
+## Building the single-file download
+
+With local native/model assets and the .NET 10.0.15 release runtime package already restored, commit the release source and run:
+
+```powershell
+python scripts/package_single_file.py --version 1.0.1
+```
+
+The helper prepares dependency notices, builds with `WindowsSingleFile`, and writes the EXE and `SHA256SUMS.txt` under ignored release artifacts. Only the EXE is needed to run; checksums and the FFmpeg source archive are optional downloads for verification/rebuilding. The FFmpeg binaries are unchanged from v1.0.0, whose matching source archive remains available at the link in the embedded `release.json` and release notes.
+
+The profile uses .NET 10's `IncludeAllContentForSelfExtract` compatibility mode because the existing model/native-tool paths use `AppContext.BaseDirectory`. Do not enable trimming. On future runtime upgrades, recheck this mode and the filesystem-based components. Test the EXE alone in a clean folder, cold/warm cache starts, a moved/renamed EXE, concurrent CLI jobs, native dependency hashes, model loading, and desktop startup. The cache must be writable by the calling user; report filesystem/startup errors without exposing credentials or request text.
 
 The download includes the English Vosk model, the verified Spout2 sender, and FFmpeg/ffprobe for CLI green-screen exports. OBS itself and its Spout2 receiver plugin are installed separately. Supply your own Gemini key; cloud features incur normal account usage charges. No credentials, transcripts, recordings, imported user avatars, or personal configuration are packaged. The bundled Captain Flasky Boy avatar is included.
 
 The application code is MIT. Native tools and other dependencies retain their own licenses. FFmpeg 9.0.2 is a separate LGPL-3.0-or-later command-line tool; its matching source archives, build configuration, dependency source packages, and binary hashes are supplied in the release's `ffmpeg-sources.zip` asset. You can replace FFmpeg with a compatible build using the CLI request's `ffmpegPath`. See the included notices and [FFmpeg guidance](https://ffmpeg.org/legal.html).
 
-## Producing a release
+## Producing a folder-based ZIP (legacy alternative)
 
 Use the existing local native tools/model assets. Nothing in the packager downloads models or installs software. Publish a clean source commit using the WindowsPortable profile, which pins the embedded .NET 10 runtime patch independently of the development SDK:
 

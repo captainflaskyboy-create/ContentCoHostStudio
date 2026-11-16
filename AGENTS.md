@@ -18,4 +18,5 @@ This is a small Windows-first proof of concept: microphone → local Vosk captio
 - No accounts, installers, voice cloning, or local LLM/TTS backend in this POC. Live-session recording, automatic long-script chunking, and timeline editing are outside the CLI export feature.
 - Run `dotnet build`, `dotnet test`, and `dotnet format --verify-no-changes`. Use the solution file explicitly if needed. Document unperformed microphone/network checks honestly.
 - Do not download models or install system software automatically. Keep model assets, native overrides, and build output out of source control.
+- Single-file Windows downloads may embed the runtime, model, native tools, documentation, and dependency notices, using .NET's automatic temporary bundle cache for filesystem-dependent components. No adjacent support files are required. This cache contains bundled distribution files only, never credentials, conversations, or recordings; keep the explicit avatar-library persistence exception separate.
 

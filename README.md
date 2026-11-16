@@ -1,6 +1,6 @@
 # Content CoHost Studio
 
-**Windows download:** get the portable ZIP from [GitHub Releases](https://github.com/captainflaskyboy-create/ContentCoHostStudio/releases), extract it, and run `ContentCoHostStudio.exe`. The .NET runtime, English caption model, and local export tools are included. See [RELEASE.md](RELEASE.md) for packaging and dependency details.
+**Windows download:** get the single-file EXE from [GitHub Releases](https://github.com/captainflaskyboy-create/ContentCoHostStudio/releases) and double-click it. No supporting files need to stay beside it. The runtime, English caption model, native tools, and notices are embedded and automatically unpacked into .NET's temporary cache. v1.0.0's older ZIP remains a folder-based build. See [RELEASE.md](RELEASE.md) for packaging details.
 
 A minimal **C# / .NET 10 LTS / Avalonia** desktop proof of concept. Speak into the default Windows microphone, see offline live captions, edit the finalized transcript, and click **Generate Response** for a personality-driven Gemini reply with expressive speech.
 
